@@ -83,12 +83,13 @@ public:
   const eversion_t& get_version() { assert(!partial_decode_needed); return reassert_version; }
   osd_reqid_t get_reqid() const {
     assert(!partial_decode_needed);
-    if (reqid != osd_reqid_t())
+    if (reqid.name != entity_name_t() || reqid.tid != 0) {
       return reqid;
-    else
+    } else {
       return osd_reqid_t(get_orig_source(),
                          client_inc,
 			 header.tid);
+    }
   }
 
   // Fields decoded in final decoding
@@ -123,9 +124,12 @@ public:
     : Message(CEPH_MSG_OSD_OP, HEAD_VERSION, COMPAT_VERSION),
       client_inc(inc),
       osdmap_epoch(_osdmap_epoch), flags(_flags), retry_attempt(-1),
-      oid(_oid), oloc(_oloc), pgid(_pgid), partial_decode_needed(false), final_decode_needed(false),
+      oid(_oid), oloc(_oloc), pgid(_pgid),
+      partial_decode_needed(false),
+      final_decode_needed(false),
       features(feat) {
     set_tid(tid);
+    reqid.inc = inc;
   }
 private:
   ~MOSDOp() {}
@@ -368,6 +372,14 @@ struct ceph_osd_request_head {
       ::decode(flags, p);
       ::decode(reassert_version, p);
       ::decode(reqid, p);
+
+      // for most ops, only reqid.inc is populated, and we have to
+      // fill in the sender name and tid; sometimes it is already set
+      // explicitly, though.
+      if (reqid.name == entity_name_t() && reqid.tid == 0) {
+	reqid.name = get_orig_source();
+	reqid.tid = header.tid;
+      }
     }
 
     partial_decode_needed = false;
